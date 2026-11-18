@@ -51,7 +51,9 @@ RANGE = int(os.environ.get("SCAN_RANGE", "300"))  # 前回の一覧の最後の�
 FULL_EXTRA = 500                                  # full のときに最大IDの先を何件見るか
 WORKERS = 4                                       # 同時アクセス数（相手サイトへの負荷を抑える）
 WAIT = float(os.environ.get("SCAN_WAIT", "0.3"))                                       # 1アクセスごとの待ち時間（秒）
-UA = "Mozilla/5.0 (compatible; smaregi-app-list-checker/1.0; internal use)"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/124.0.0.0 Safari/537.36")
+LAST_ERRORS: dict[str, int] = {}   # 通信エラーの内訳（失敗したときの原因調査用）
 TITLE_SUFFIX = re.compile(r"\s*[｜|]\s*スマレジ・アプリマーケット\s*$")
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -74,18 +76,25 @@ def fetch(url: str, tries: int = 3) -> tuple[int, str]:
     """(ステータス, HTML) を返す。通信エラーは -1。"""
     for i in range(tries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
+            req = urllib.request.Request(url, headers={
+                "User-Agent": UA,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "ja,en;q=0.8",
+            })
             with urllib.request.urlopen(req, timeout=30) as r:
                 body = r.read().decode("utf-8", "replace")
                 time.sleep(WAIT)
                 return r.status, body
         except urllib.error.HTTPError as e:
+            LAST_ERRORS[f"HTTP {e.code}"] = LAST_ERRORS.get(f"HTTP {e.code}", 0) + 1
             time.sleep(WAIT)
             if e.code in (404, 410):
                 return e.code, ""
             if i == tries - 1:
                 return e.code, ""
-        except Exception:
+        except Exception as e:
+            key = f"{type(e).__name__}: {str(e)[:80]}"
+            LAST_ERRORS[key] = LAST_ERRORS.get(key, 0) + 1
             if i == tries - 1:
                 return -1, ""
         time.sleep(3)
@@ -293,9 +302,19 @@ def main() -> int:
     prev_valid = {k for k, v in prev.items() if v["status"] == 200}
 
     prev_listed = [int(x) for x in read_json(SNAP, {}).get("ids", [])]
+
+    # 接続テスト（つながらないときは、何千件も試さずにすぐ止める）
+    st, page = fetch(BASE + "/apps")
+    print(f"接続テスト: {BASE}/apps → {st}（{len(page)}文字）", flush=True)
+    if st != 200:
+        print(f"❌ アプリマーケットに接続できませんでした（応答: {st}）。内訳: {LAST_ERRORS or 'なし'}", file=sys.stderr)
+        if page:
+            print("応答の先頭: " + re.sub(r"\s+", " ", page[:300]), file=sys.stderr)
+        return 1
+
     listed, total, pages = crawl_listing()
     listed_ids = {int(x) for x in listed}
-    known_max = max([int(x) for x in prev_valid] + list(listed_ids) + [0])
+    known_max = max([int(x) for x in prev_valid] + list(listed_ids) + [int(x) for x in known] + [0])
 
     global MODE
     if not prev:
@@ -319,7 +338,11 @@ def main() -> int:
             results[info["id"]] = info
 
     if not any(r["status"] == 200 for r in results.values()):
-        print("❌ 有効なアプリが1件もありませんでした。アプリマーケットに接続できていない可能性があります。", file=sys.stderr)
+        statuses: dict[str, int] = {}
+        for r in results.values():
+            statuses[str(r["status"])] = statuses.get(str(r["status"]), 0) + 1
+        print(f"❌ 有効なアプリが1件もありませんでした。応答の内訳: {statuses}　通信エラーの内訳: {LAST_ERRORS or 'なし'}",
+              file=sys.stderr)
         return 1
 
     # 通信エラーの番号は、前回の結果を残す
