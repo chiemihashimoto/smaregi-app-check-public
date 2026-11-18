@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>スマレジ・アプリマーケット 新着チェック</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆕</text></svg>">
+<style>
+:root{
+  --bg:#f6f7f5;--surface:#ffffff;--ink:#1d2320;--muted:#5d6762;--line:#dfe3df;
+  --accent:#0b7a5c;--accent-soft:#e3f2ec;--warn:#9a5b00;--warn-soft:#fbf0dc;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#141816;--surface:#1c211f;--ink:#e8ece9;--muted:#9aa49f;--line:#2e3532;
+    --accent:#4cc79e;--accent-soft:#183329;--warn:#e9b25a;--warn-soft:#352a17;color-scheme:dark}
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  line-height:1.7;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 18px 56px}
+h1{font-size:clamp(20px,4vw,26px);margin:0 0 4px;letter-spacing:.02em}
+.lead{color:var(--muted);margin:0 0 20px;font-size:14px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:13px}
+.meta{color:var(--muted);font-size:13px;margin:0 0 28px;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:700}
+@media (prefers-color-scheme:dark){.btn{color:#0d1a15}}
+h2{font-size:18px;margin:32px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 10px}
+.card h3{margin:0;font-size:16px}
+.card h3 a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--accent)}
+.card h3 a:hover{color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;align-items:center}
+.tag{font-size:12px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:1px 10px}
+.price{font-size:13px;font-weight:700}
+.date{font-size:12px;color:var(--muted);margin-left:auto}
+.desc{margin:8px 0 0;font-size:14px;color:var(--muted)}
+.empty{color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:18px;text-align:center}
+ul.gone{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+ul.gone li{display:flex;gap:12px;align-items:baseline;padding:10px 16px;border-top:1px solid var(--line)}
+ul.gone li:first-child{border-top:0}
+ul.gone .gname{font-weight:700}
+details summary{cursor:pointer;color:var(--muted);font-size:14px;margin:8px 0}
+footer{margin-top:40px;color:var(--muted);font-size:12px}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>スマレジ・アプリマーケット 新着チェック</h1>
+  <p class="lead">アプリマーケットの公開情報を毎週月曜に自動で確認し、新しく増えたアプリと、見つからなくなったアプリをまとめています。</p>
+
+  <div class="stats">
+    <div class="stat"><b id="s-total">—</b><span>一覧の掲載件数</span></div>
+    <div class="stat"><b id="s-new">—</b><span>新着（直近90日）</span></div>
+    <div class="stat"><b id="s-gone">—</b><span>見つからなくなった（直近90日）</span></div>
+  </div>
+  <p class="meta"><span id="checked">読み込み中…</span></p>
+
+  <h2>新着アプリ<small>見つけた日の新しい順</small></h2>
+  <div id="new-list"></div>
+  <details id="new-old" hidden><summary>90日より前の新着</summary><div id="new-old-list"></div></details>
+
+  <h2>見つからなくなったアプリ<small>掲載終了・名前の変更などの可能性</small></h2>
+  <div id="gone-list"></div>
+
+  <footer>
+    情報は自動で集めたものです。料金・対象プランなどの最新の内容は、各アプリのページで確認してください。
+    出典: <a href="https://apps.smaregi.jp/apps" target="_blank" rel="noopener">スマレジ・アプリマーケット</a>
+  </footer>
+</div>
+<script>
+(function(){
+  'use strict';
+  var DAYS=90;
+  function $(id){return document.getElementById(id)}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function ago(d){var t=Date.parse(d);return isNaN(t)?Infinity:(Date.now()-t)/86400000}
+  function day(d){var t=new Date(d);return isNaN(t)?'':t.toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric'})}
+  function when(d){var t=new Date(d);return isNaN(t)?'':t.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})}
+  function safeUrl(u){return /^https:\/\/apps\.smaregi\.jp\//.test(String(u||''))?u:'https://apps.smaregi.jp/apps'}
+
+  function newCard(a){
+    var cats=String(a.cat||'').split(/[、,]/).filter(Boolean);
+    return '<article class="card"><h3><a href="'+esc(safeUrl(a.url))+'" target="_blank" rel="noopener">'+esc(a.name)+'</a></h3>'+
+      '<div class="row">'+cats.map(function(c){return '<span class="tag">'+esc(c)+'</span>'}).join('')+
+      (a.priceText?'<span class="price">'+esc(a.priceText)+'</span>':'')+
+      '<span class="date">見つけた日 '+esc(day(a.foundAt))+'</span></div>'+
+      ((a.tag||a.desc)?'<p class="desc">'+esc(a.tag||a.desc)+'</p>':'')+'</article>';
+  }
+
+  function goneItem(g){
+    return '<li><span class="gname">'+esc(g.name)+'</span><span class="date">'+esc(day(g.goneAt))+'</span></li>';
+  }
+
+  fetch('data/new-apps.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(function(d){
+    // 一覧に掲載されていないアプリ（listed:false）は、このページには出しません
+    var apps=(d.apps||[]).filter(function(a){return a.listed!==false}).sort(function(x,y){return String(y.foundAt).localeCompare(String(x.foundAt))});
+    var recent=apps.filter(function(a){return ago(a.foundAt)<=DAYS}),old=apps.filter(function(a){return ago(a.foundAt)>DAYS});
+
+    $('s-total').textContent=d.marketTotal!=null?d.marketTotal+'件':'—';
+    $('s-new').textContent=recent.length+'件';
+    var gone=(d.gone||[]).slice().sort(function(x,y){return String(y.goneAt).localeCompare(String(x.goneAt))});
+    $('s-gone').textContent=gone.filter(function(g){return ago(g.goneAt)<=DAYS}).length+'件';
+    $('gone-list').innerHTML=gone.length?'<ul class="gone">'+gone.map(goneItem).join('')+'</ul>':'<div class="empty">見つからなくなったアプリはありません</div>';
+    $('checked').textContent=d.checkedAt?'最終チェック: '+when(d.checkedAt):'まだチェックしていません（初回の実行を待っています）';
+
+    $('new-list').innerHTML=recent.length?recent.map(newCard).join(''):'<div class="empty">直近'+DAYS+'日の新着はありません</div>';
+    if(old.length){$('new-old').hidden=false;$('new-old-list').innerHTML=old.map(newCard).join('');}
+  }).catch(function(){
+    $('checked').textContent='データを読み込めませんでした。時間をおいて再読み込みしてください';
+    $('new-list').innerHTML='<div class="empty">データを読み込めませんでした</div>';
+  });
+})();
+</script>
+</body>
+</html>
